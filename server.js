@@ -424,8 +424,8 @@ app.post('/api/tokens', authenticate, enforceAdminTagRestriction, async (req, re
   }
 });
 
-// DELETE token by ID (Super Admin only)
-app.delete('/api/tokens/:id', authenticate, superAdminOnly, async (req, res) => {
+// DELETE token by ID (Both Super Admin and Admin can delete)
+app.delete('/api/tokens/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     

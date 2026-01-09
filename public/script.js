@@ -111,18 +111,7 @@ function updateUIForRole() {
             `;
         }
         
-        // Hide delete buttons
-        document.querySelectorAll('.btn-delete').forEach(btn => {
-            btn.style.display = 'none';
-        });
-        
-        // Hide bulk delete button
-        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-        if (bulkDeleteBtn) bulkDeleteBtn.style.display = 'none';
-        
-        // Hide delete selected button
-        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-        if (deleteSelectedBtn) deleteSelectedBtn.style.display = 'none';
+        // Admin CAN delete tokens now - don't hide delete buttons
         
         // Hide bulk tag update button (Admin can't change tags)
         const bulkUpdateTagBtn = document.getElementById('bulkUpdateTagBtn');
@@ -773,7 +762,6 @@ function createTokenRow(token, index) {
                     <i class="fas fa-edit"></i>
                     <span class="hidden lg:inline">Edit</span>
                 </button>
-                ${isSuperAdmin ? `
                 <button 
                     onclick="deleteToken('${token.id}')"
                     class="btn-delete px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm flex items-center space-x-1"
@@ -782,7 +770,6 @@ function createTokenRow(token, index) {
                     <i class="fas fa-trash"></i>
                     <span class="hidden lg:inline">Delete</span>
                 </button>
-                ` : ''}
             </div>
         </td>
     `;
@@ -903,12 +890,6 @@ async function handleAddToken(e) {
  * @param {String} tokenId - Token ID to delete
  */
 async function deleteToken(tokenId) {
-    // Check if user is Admin (not Super Admin)
-    if (currentUser && currentUser.role === 'admin') {
-        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
-        return;
-    }
-    
     if (!confirm('Are you sure you want to delete this token?')) {
         return;
     }
@@ -922,12 +903,6 @@ async function deleteToken(tokenId) {
         // Check for authentication errors
         if (response.status === 401) {
             logout();
-            return;
-        }
-        
-        // Check for authorization errors
-        if (response.status === 403) {
-            showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
             return;
         }
         
@@ -1253,12 +1228,6 @@ function deselectAll() {
 async function deleteSelectedTokens() {
     if (selectedTokens.size === 0) return;
     
-    // Check if user is Admin
-    if (currentUser && currentUser.role === 'admin') {
-        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
-        return;
-    }
-    
     const confirmed = confirm(`Are you sure you want to delete ${selectedTokens.size} selected tokens?`);
     if (!confirmed) return;
     
@@ -1274,11 +1243,6 @@ async function deleteSelectedTokens() {
             
             if (response.status === 401) {
                 logout();
-                return;
-            }
-            
-            if (response.status === 403) {
-                showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
                 return;
             }
             
@@ -1645,12 +1609,6 @@ async function confirmBulkDelete() {
         return;
     }
     
-    // Check if user is Admin
-    if (currentUser && currentUser.role === 'admin') {
-        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
-        return;
-    }
-    
     const confirmed = confirm(`⚠️ Are you sure you want to delete ${tokensToDelete.length} tokens?\n\nThis action cannot be undone!`);
     
     if (!confirmed) {
@@ -1673,11 +1631,6 @@ async function confirmBulkDelete() {
             if (response.status === 401) {
                 logout();
                 return;
-            }
-            
-            if (response.status === 403) {
-                showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
-                break;
             }
             
             const data = await response.json();

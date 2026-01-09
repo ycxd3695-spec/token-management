@@ -1,10 +1,162 @@
 /**
  * Token Management System - Frontend Logic
  * Handles UI interactions and API communication
+ * With Role-Based Access Control
  */
 
 // Configuration
 const API_BASE_URL = window.location.origin;
+
+// ============================================
+// AUTHENTICATION STATE
+// ============================================
+let currentUser = null;
+let authToken = null;
+
+// Check authentication on page load
+function checkAuth() {
+    authToken = localStorage.getItem('authToken');
+    const userStr = localStorage.getItem('user');
+    
+    if (!authToken || !userStr) {
+        window.location.href = '/login';
+        return false;
+    }
+    
+    try {
+        currentUser = JSON.parse(userStr);
+        updateUIForRole();
+        return true;
+    } catch (e) {
+        logout();
+        return false;
+    }
+}
+
+// Get auth headers for API calls
+function getAuthHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+    };
+}
+
+// Logout function
+function logout() {
+    // Call logout API
+    fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+    }).catch(() => {});
+    
+    // Clear local storage
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('user');
+    
+    // Redirect to login
+    window.location.href = '/login';
+}
+
+// Update UI based on user role
+function updateUIForRole() {
+    if (!currentUser) return;
+    
+    const isSuperAdmin = currentUser.role === 'super_admin';
+    const isAdmin = currentUser.role === 'admin';
+    
+    // Update header with user info
+    const headerDiv = document.querySelector('header .container');
+    if (headerDiv) {
+        // Add user info and logout button to header
+        const existingUserInfo = document.getElementById('userInfoSection');
+        if (!existingUserInfo) {
+            const userInfoHTML = `
+                <div id="userInfoSection" class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2 bg-gray-100 px-3 py-2 rounded-lg">
+                        <i class="fas ${isSuperAdmin ? 'fa-crown text-yellow-500' : 'fa-user-shield text-green-600'}"></i>
+                        <span class="text-sm font-medium text-gray-700">${currentUser.name}</span>
+                        <span class="text-xs px-2 py-1 rounded ${isSuperAdmin ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}">
+                            ${isSuperAdmin ? 'Super Admin' : 'Admin'}
+                        </span>
+                    </div>
+                    <button 
+                        onclick="logout()"
+                        class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm flex items-center space-x-2"
+                    >
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            `;
+            const rightSection = headerDiv.querySelector('.flex.items-center.space-x-4');
+            if (rightSection) {
+                rightSection.insertAdjacentHTML('afterend', userInfoHTML);
+            }
+        }
+    }
+    
+    // Hide/disable elements for Admin role
+    if (isAdmin) {
+        // Hide tag input field in add token form
+        const tagInputContainer = tagInput?.parentElement;
+        if (tagInputContainer) {
+            tagInputContainer.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-tag mr-1"></i>Tag (Auto-assigned)
+                </label>
+                <div class="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-600">
+                    <i class="fas fa-lock mr-2"></i>🔴 Banti (Auto-assigned)
+                </div>
+                <input type="hidden" id="tagInput" value="banti">
+            `;
+        }
+        
+        // Hide delete buttons
+        document.querySelectorAll('.btn-delete').forEach(btn => {
+            btn.style.display = 'none';
+        });
+        
+        // Hide bulk delete button
+        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+        if (bulkDeleteBtn) bulkDeleteBtn.style.display = 'none';
+        
+        // Hide delete selected button
+        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+        if (deleteSelectedBtn) deleteSelectedBtn.style.display = 'none';
+        
+        // Hide bulk tag update button (Admin can't change tags)
+        const bulkUpdateTagBtn = document.getElementById('bulkUpdateTagBtn');
+        if (bulkUpdateTagBtn) bulkUpdateTagBtn.style.display = 'none';
+        
+        // Hide edit tag in edit modal
+        const editTagContainer = editTagInput?.parentElement;
+        if (editTagContainer) {
+            editTagContainer.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-tag mr-1"></i>Tag
+                </label>
+                <div class="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-600">
+                    <i class="fas fa-lock mr-2"></i>🔴 Banti (Cannot be changed)
+                </div>
+                <input type="hidden" id="editTagInput" value="banti">
+            `;
+        }
+        
+        // Hide WhatsApp tag input
+        const whatsappTagContainer = whatsappTagInput?.parentElement;
+        if (whatsappTagContainer) {
+            whatsappTagContainer.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-tag mr-1"></i>Tag for All (Auto-assigned)
+                </label>
+                <div class="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-600">
+                    <i class="fas fa-lock mr-2"></i>🔴 Banti (Auto-assigned)
+                </div>
+                <input type="hidden" id="whatsappTagInput" value="banti">
+            `;
+        }
+    }
+}
 
 // DOM Elements
 const addTokenForm = document.getElementById('addTokenForm');
@@ -116,6 +268,12 @@ let currentEditingTokenId = null;
  */
 function init() {
     console.log('🚀 Token Management System initialized');
+    
+    // Check authentication first
+    if (!checkAuth()) {
+        return; // Will redirect to login
+    }
+    
     initDarkMode();
     loadTokens();
     setupEventListeners();
@@ -253,7 +411,16 @@ async function loadTokens() {
     try {
         updateUIState(true);
         
-        const response = await fetch(`${API_BASE_URL}/api/tokens`);
+        const response = await fetch(`${API_BASE_URL}/api/tokens`, {
+            headers: getAuthHeaders()
+        });
+        
+        // Check for authentication errors
+        if (response.status === 401) {
+            logout();
+            return;
+        }
+        
         const data = await response.json();
         
         if (data.success) {
@@ -261,6 +428,9 @@ async function loadTokens() {
             console.log(`✅ Loaded ${tokens.length} tokens`);
             console.log('Token details:', tokens); // Debug: Show all token data
             renderTokens();
+            
+            // Update UI for role after loading
+            updateUIForRole();
         } else {
             throw new Error(data.message);
         }
@@ -482,6 +652,10 @@ function createTokenRow(token, index) {
     row.className = 'border-b border-gray-200 hover:bg-gray-50 transition token-card';
     row.style.animationDelay = `${index * 0.05}s`;
     
+    // Check if user is Admin (for hiding delete button)
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const isSuperAdmin = currentUser && currentUser.role === 'super_admin';
+    
     // Format date as DD-MM-YYYY
     const date = new Date(token.createdAt);
     const day = String(date.getDate()).padStart(2, '0');
@@ -599,6 +773,7 @@ function createTokenRow(token, index) {
                     <i class="fas fa-edit"></i>
                     <span class="hidden lg:inline">Edit</span>
                 </button>
+                ${isSuperAdmin ? `
                 <button 
                     onclick="deleteToken('${token.id}')"
                     class="btn-delete px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm flex items-center space-x-1"
@@ -607,6 +782,7 @@ function createTokenRow(token, index) {
                     <i class="fas fa-trash"></i>
                     <span class="hidden lg:inline">Delete</span>
                 </button>
+                ` : ''}
             </div>
         </td>
     `;
@@ -649,7 +825,8 @@ async function handleAddToken(e) {
     
     const nameValue = nameInput.value.trim();
     const tokenValue = tokenInput.value.trim();
-    const tagValue = tagInput.value;
+    const tagInputEl = document.getElementById('tagInput');
+    const tagValue = tagInputEl ? tagInputEl.value : '';
     const dateValue = dateInput.value;
     
     if (!nameValue) {
@@ -681,11 +858,15 @@ async function handleAddToken(e) {
         
         const response = await fetch(`${API_BASE_URL}/api/tokens`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify(requestBody)
         });
+        
+        // Check for authentication errors
+        if (response.status === 401) {
+            logout();
+            return;
+        }
         
         const data = await response.json();
         
@@ -697,7 +878,9 @@ async function handleAddToken(e) {
             // Clear inputs
             nameInput.value = '';
             tokenInput.value = '';
-            tagInput.value = '';
+            if (tagInputEl && tagInputEl.tagName === 'SELECT') {
+                tagInputEl.value = '';
+            }
             dateInput.value = '';
             nameInput.focus();
             
@@ -720,14 +903,33 @@ async function handleAddToken(e) {
  * @param {String} tokenId - Token ID to delete
  */
 async function deleteToken(tokenId) {
+    // Check if user is Admin (not Super Admin)
+    if (currentUser && currentUser.role === 'admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+    
     if (!confirm('Are you sure you want to delete this token?')) {
         return;
     }
     
     try {
         const response = await fetch(`${API_BASE_URL}/api/tokens/${tokenId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: getAuthHeaders()
         });
+        
+        // Check for authentication errors
+        if (response.status === 401) {
+            logout();
+            return;
+        }
+        
+        // Check for authorization errors
+        if (response.status === 403) {
+            showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+            return;
+        }
         
         const data = await response.json();
         
@@ -969,13 +1171,18 @@ async function importTokens(e) {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/tokens`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         name: token.name || 'Imported Token',
                         token: token.value || token.token,
                         tag: token.tag || ''
                     })
                 });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
                 
                 const data = await response.json();
                 if (data.success) {
@@ -1046,6 +1253,12 @@ function deselectAll() {
 async function deleteSelectedTokens() {
     if (selectedTokens.size === 0) return;
     
+    // Check if user is Admin
+    if (currentUser && currentUser.role === 'admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+    
     const confirmed = confirm(`Are you sure you want to delete ${selectedTokens.size} selected tokens?`);
     if (!confirmed) return;
     
@@ -1055,8 +1268,20 @@ async function deleteSelectedTokens() {
     for (const id of idsToDelete) {
         try {
             const response = await fetch(`${API_BASE_URL}/api/tokens/${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: getAuthHeaders()
             });
+            
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+            
+            if (response.status === 403) {
+                showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+                return;
+            }
+            
             const data = await response.json();
             if (data.success) {
                 tokens = tokens.filter(t => t.id !== id);
@@ -1212,7 +1437,8 @@ async function importParsedTokens() {
         return;
     }
     
-    const tag = whatsappTagInput.value;
+    const whatsappTagInputEl = document.getElementById('whatsappTagInput');
+    const tag = whatsappTagInputEl ? whatsappTagInputEl.value : '';
     let imported = 0;
     let failed = 0;
     let duplicates = 0;
@@ -1224,9 +1450,7 @@ async function importParsedTokens() {
         try {
             const response = await fetch(`${API_BASE_URL}/api/tokens`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({
                     name: token.name,
                     token: token.value,
@@ -1234,6 +1458,11 @@ async function importParsedTokens() {
                     createdAt: token.createdAt  // Pass the WhatsApp message date
                 })
             });
+            
+            if (response.status === 401) {
+                logout();
+                return;
+            }
             
             const data = await response.json();
             
@@ -1416,6 +1645,12 @@ async function confirmBulkDelete() {
         return;
     }
     
+    // Check if user is Admin
+    if (currentUser && currentUser.role === 'admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+    
     const confirmed = confirm(`⚠️ Are you sure you want to delete ${tokensToDelete.length} tokens?\n\nThis action cannot be undone!`);
     
     if (!confirmed) {
@@ -1431,8 +1666,19 @@ async function confirmBulkDelete() {
     for (const token of tokensToDelete) {
         try {
             const response = await fetch(`${API_BASE_URL}/api/tokens/${token.id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: getAuthHeaders()
             });
+            
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+            
+            if (response.status === 403) {
+                showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+                break;
+            }
             
             const data = await response.json();
             
@@ -1518,7 +1764,8 @@ async function handleEditToken(e) {
     
     const nameValue = editNameInput.value.trim();
     const tokenValue = editTokenInput.value.trim();
-    const tagValue = editTagInput.value;
+    const editTagInputEl = document.getElementById('editTagInput');
+    const tagValue = editTagInputEl ? editTagInputEl.value : '';
     const dateValue = editDateInput.value;
     
     if (!nameValue || !tokenValue || !dateValue) {
@@ -1535,9 +1782,7 @@ async function handleEditToken(e) {
         
         const response = await fetch(`${API_BASE_URL}/api/tokens/${currentEditingTokenId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ 
                 name: nameValue,
                 token: tokenValue,
@@ -1545,6 +1790,11 @@ async function handleEditToken(e) {
                 createdAt: createdAt
             })
         });
+        
+        if (response.status === 401) {
+            logout();
+            return;
+        }
         
         const data = await response.json();
         
@@ -1590,6 +1840,13 @@ function closeBulkTagModalHandler() {
  * Confirm Bulk Tag Update
  */
 async function confirmBulkTagUpdate() {
+    // Check if user is Admin
+    if (currentUser && currentUser.role === 'admin') {
+        showStatus('Access denied. Only Super Admin can modify tags.', 'error');
+        closeBulkTagModalHandler();
+        return;
+    }
+    
     const newTag = bulkTagSelect.value;
     const selectedIds = Array.from(selectedTokens);
     
@@ -1624,9 +1881,7 @@ async function confirmBulkTagUpdate() {
                 
                 const response = await fetch(`${API_BASE_URL}/api/tokens/${tokenId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ 
                         name: token.name,
                         token: token.value,
@@ -1634,6 +1889,11 @@ async function confirmBulkTagUpdate() {
                         createdAt: token.createdAt
                     })
                 });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
                 
                 const data = await response.json();
                 
@@ -1748,9 +2008,7 @@ async function confirmBulkDateUpdate() {
                 
                 const response = await fetch(`${API_BASE_URL}/api/tokens/${tokenId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ 
                         name: token.name,
                         token: token.value,
@@ -1758,6 +2016,11 @@ async function confirmBulkDateUpdate() {
                         createdAt: createdAt
                     })
                 });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
                 
                 const data = await response.json();
                 
@@ -1802,3 +2065,4 @@ window.toggleTokenSelection = toggleTokenSelection;
 window.exportToCSV = exportToCSV;
 window.exportToJSON = exportToJSON;
 window.openEditModal = openEditModal;
+window.logout = logout;

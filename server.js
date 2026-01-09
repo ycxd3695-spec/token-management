@@ -1,6 +1,7 @@
 /**
  * Token Management System - Backend Server
  * Handles all GitHub API interactions for token management
+ * With Role-Based Access Control (Super Admin & Admin)
  */
 
 require('dotenv').config();
@@ -8,6 +9,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +18,89 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// ============================================
+// USER MANAGEMENT & AUTHENTICATION
+// ============================================
+
+// User roles
+const ROLES = {
+  SUPER_ADMIN: 'super_admin',
+  ADMIN: 'admin'
+};
+
+// Default users (In production, use database)
+const users = [
+  {
+    id: '1',
+    username: 'superadmin',
+    password: 'superadmin123', // In production, use hashed passwords
+    role: ROLES.SUPER_ADMIN,
+    name: 'Super Admin'
+  },
+  {
+    id: '2',
+    username: 'banti',
+    password: 'banti123',
+    role: ROLES.ADMIN,
+    name: 'Banti'
+  }
+];
+
+// Active sessions (In production, use Redis or database)
+const sessions = new Map();
+
+// Generate session token
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Authentication middleware
+function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Authentication required' 
+    });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const session = sessions.get(token);
+
+  if (!session) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Invalid or expired token' 
+    });
+  }
+
+  // Lifetime session - no expiry check
+  req.user = session.user;
+  req.token = token;
+  next();
+}
+
+// Super Admin only middleware
+function superAdminOnly(req, res, next) {
+  if (req.user.role !== ROLES.SUPER_ADMIN) {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Access denied. Super Admin privileges required.' 
+    });
+  }
+  next();
+}
+
+// Force Banti tag for Admin users
+function enforceAdminTagRestriction(req, res, next) {
+  if (req.user.role === ROLES.ADMIN) {
+    // Force tag to "banti" for Admin users
+    req.body.tag = 'banti';
+  }
+  next();
+}
 
 // GitHub API Configuration
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -174,6 +259,72 @@ async function updateGitHubFile(tokens, sha, message) {
  * API Routes
  */
 
+// ============================================
+// AUTH ROUTES (No authentication required)
+// ============================================
+
+// Login endpoint
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Username and password are required' 
+    });
+  }
+
+  const user = users.find(u => u.username === username && u.password === password);
+
+  if (!user) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Invalid username or password' 
+    });
+  }
+
+  // Generate session token
+  const token = generateToken();
+  sessions.set(token, {
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      name: user.name
+    },
+    createdAt: Date.now()
+  });
+
+  res.json({
+    success: true,
+    message: 'Login successful',
+    token: token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      name: user.name
+    }
+  });
+});
+
+// Logout endpoint
+app.post('/api/auth/logout', authenticate, (req, res) => {
+  sessions.delete(req.token);
+  res.json({ 
+    success: true, 
+    message: 'Logged out successfully' 
+  });
+});
+
+// Get current user
+app.get('/api/auth/me', authenticate, (req, res) => {
+  res.json({
+    success: true,
+    user: req.user
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -187,8 +338,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// GET all tokens
-app.get('/api/tokens', async (req, res) => {
+// ============================================
+// TOKEN ROUTES (Authentication required)
+// ============================================
+
+// GET all tokens (Both roles can access)
+app.get('/api/tokens', authenticate, async (req, res) => {
   try {
     const { content } = await getGitHubFile();
     res.json({ 
@@ -205,8 +360,8 @@ app.get('/api/tokens', async (req, res) => {
   }
 });
 
-// POST new token
-app.post('/api/tokens', async (req, res) => {
+// POST new token (Both roles can add, but Admin's tag is forced to "banti")
+app.post('/api/tokens', authenticate, enforceAdminTagRestriction, async (req, res) => {
   try {
     const { name, token, tag, createdAt } = req.body;
     
@@ -269,8 +424,8 @@ app.post('/api/tokens', async (req, res) => {
   }
 });
 
-// DELETE token by ID
-app.delete('/api/tokens/:id', async (req, res) => {
+// DELETE token by ID (Super Admin only)
+app.delete('/api/tokens/:id', authenticate, superAdminOnly, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -308,11 +463,11 @@ app.delete('/api/tokens/:id', async (req, res) => {
   }
 });
 
-// PUT update token by ID
-app.put('/api/tokens/:id', async (req, res) => {
+// PUT update token by ID (Super Admin can update all, Admin cannot update tags)
+app.put('/api/tokens/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, token, tag, createdAt } = req.body;
+    let { name, token, tag, createdAt } = req.body;
     
     // Validate input
     if (!name || name.trim() === '') {
@@ -340,6 +495,13 @@ app.put('/api/tokens/:id', async (req, res) => {
         success: false, 
         message: 'Token not found' 
       });
+    }
+
+    // ROLE-BASED TAG RESTRICTION
+    // Admin users cannot modify tags - keep the ORIGINAL tag from database
+    if (req.user.role === ROLES.ADMIN) {
+      // Admin cannot change tags - preserve original tag
+      tag = tokens[tokenIndex].tag || '';
     }
     
     // Update token
@@ -369,7 +531,12 @@ app.put('/api/tokens/:id', async (req, res) => {
   }
 });
 
-// Serve frontend
+// Serve login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Serve frontend (main app)
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -379,4 +546,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Token Management System running on http://localhost:${PORT}`);
   console.log(`📁 GitHub: ${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_FILE_PATH}`);
   console.log(`✅ Ready to manage tokens!`);
+  console.log(`👤 Default Users:`);
+  console.log(`   - Super Admin: superadmin / superadmin123`);
+  console.log(`   - Admin: banti / banti123`);
 });

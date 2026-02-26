@@ -153,6 +153,7 @@ const nameInput = document.getElementById('nameInput');
 const tokenInput = document.getElementById('tokenInput');
 const tagInput = document.getElementById('tagInput');
 const dateInput = document.getElementById('dateInput');
+const categoryInput = document.getElementById('categoryInput');
 const addTokenBtn = document.getElementById('addTokenBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 const tokensList = document.getElementById('tokensList');
@@ -168,6 +169,7 @@ const dateRangeFilter = document.getElementById('dateRangeFilter');
 const sortFilter = document.getElementById('sortFilter');
 const tagFilter = document.getElementById('tagFilter');
 const expiryFilter = document.getElementById('expiryFilter');
+const categoryFilter = document.getElementById('categoryFilter');
 const filterStats = document.getElementById('filterStats');
 const filteredCount = document.getElementById('filteredCount');
 const totalCount = document.getElementById('totalCount');
@@ -215,6 +217,7 @@ const editTokenForm = document.getElementById('editTokenForm');
 const editNameInput = document.getElementById('editNameInput');
 const editTokenInput = document.getElementById('editTokenInput');
 const editTagInput = document.getElementById('editTagInput');
+const editCategoryInput = document.getElementById('editCategoryInput');
 const editDateInput = document.getElementById('editDateInput');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 const saveEditBtn = document.getElementById('saveEditBtn');
@@ -227,6 +230,15 @@ const cancelBulkTagBtn = document.getElementById('cancelBulkTagBtn');
 const confirmBulkTagBtn = document.getElementById('confirmBulkTagBtn');
 const bulkTagSelect = document.getElementById('bulkTagSelect');
 const bulkTagCount = document.getElementById('bulkTagCount');
+
+// Bulk Category Update Elements
+const bulkUpdateCategoryBtn = document.getElementById('bulkUpdateCategoryBtn');
+const bulkCategoryModal = document.getElementById('bulkCategoryModal');
+const closeBulkCategoryModal = document.getElementById('closeBulkCategoryModal');
+const cancelBulkCategoryBtn = document.getElementById('cancelBulkCategoryBtn');
+const confirmBulkCategoryBtn = document.getElementById('confirmBulkCategoryBtn');
+const bulkCategorySelect = document.getElementById('bulkCategorySelect');
+const bulkCategoryCount = document.getElementById('bulkCategoryCount');
 
 // Bulk Date Update Elements
 const bulkUpdateDateBtn = document.getElementById('bulkUpdateDateBtn');
@@ -248,6 +260,7 @@ let currentDateRange = 'all';
 let parsedWhatsappTokens = [];
 let currentTagFilter = '';
 let currentExpiryFilter = '';
+let currentCategoryFilter = '';
 let selectedTokens = new Set();
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 let currentEditingTokenId = null;
@@ -280,6 +293,7 @@ function setupEventListeners() {
     sortFilter.addEventListener('change', handleSort);
     tagFilter.addEventListener('change', handleTagFilter);
     expiryFilter.addEventListener('change', handleExpiryFilter);
+    categoryFilter.addEventListener('change', handleCategoryFilter);
     darkModeToggle.addEventListener('click', toggleDarkMode);
     exportBtn.addEventListener('click', toggleExportMenu);
     importBtn.addEventListener('click', () => importFileInput.click());
@@ -318,6 +332,12 @@ function setupEventListeners() {
     cancelBulkTagBtn.addEventListener('click', closeBulkTagModalHandler);
     confirmBulkTagBtn.addEventListener('click', confirmBulkTagUpdate);
     
+    // Bulk Category Update event listeners
+    bulkUpdateCategoryBtn.addEventListener('click', showBulkCategoryModal);
+    closeBulkCategoryModal.addEventListener('click', closeBulkCategoryModalHandler);
+    cancelBulkCategoryBtn.addEventListener('click', closeBulkCategoryModalHandler);
+    confirmBulkCategoryBtn.addEventListener('click', confirmBulkCategoryUpdate);
+
     // Bulk Date Update event listeners
     bulkUpdateDateBtn.addEventListener('click', showBulkDateModal);
     closeBulkDateModal.addEventListener('click', closeBulkDateModalHandler);
@@ -338,6 +358,13 @@ function setupEventListeners() {
         }
     });
     
+    // Close bulk category modal when clicking outside
+    bulkCategoryModal.addEventListener('click', (e) => {
+        if (e.target === bulkCategoryModal) {
+            closeBulkCategoryModalHandler();
+        }
+    });
+
     // Close bulk date modal when clicking outside
     bulkDateModal.addEventListener('click', (e) => {
         if (e.target === bulkDateModal) {
@@ -501,6 +528,11 @@ function filterAndSortTokens(tokenList, searchTerm, sortOrder) {
     // Apply tag filter
     if (currentTagFilter) {
         result = result.filter(token => token.tag === currentTagFilter);
+    }
+    
+    // Apply category filter
+    if (currentCategoryFilter) {
+        result = result.filter(token => token.category === currentCategoryFilter);
     }
     
     // Apply expiry filter
@@ -694,6 +726,17 @@ function createTokenRow(token, index) {
     };
     const tagBadge = token.tag ? tagBadges[token.tag] || '' : '<span class="text-gray-400 text-xs">-</span>';
     
+    // Get category badge
+    const categoryBadges = {
+        'shakti': '<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">💪 Shakti</span>',
+        'gt': '<span class="px-2 py-1 bg-cyan-100 text-cyan-700 rounded text-xs">🎯 GT</span>',
+        'cadbury': '<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs">🍫 Cadbury</span>',
+        'rs': '<span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">💰 RS</span>',
+        'other_apk': '<span class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs">📦 Other APK</span>',
+        'personal_apk': '<span class="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs">📱 Personal APK</span>'
+    };
+    const categoryBadge = token.category ? categoryBadges[token.category] || '<span class="text-gray-400 text-xs">-</span>' : '<span class="text-gray-400 text-xs">-</span>';
+    
     const isChecked = selectedTokens.has(token.id) ? 'checked' : '';
     
     row.innerHTML = `
@@ -726,6 +769,9 @@ function createTokenRow(token, index) {
         </td>
         <td class="px-4 py-4">
             ${tagBadge}
+        </td>
+        <td class="px-4 py-4">
+            ${categoryBadge}
         </td>
         <td class="px-4 py-4">
             <div class="flex flex-col">
@@ -814,6 +860,8 @@ async function handleAddToken(e) {
     const tokenValue = tokenInput.value.trim();
     const tagInputEl = document.getElementById('tagInput');
     const tagValue = tagInputEl ? tagInputEl.value : '';
+    const categoryInputEl = document.getElementById('categoryInput');
+    const categoryValue = categoryInputEl ? categoryInputEl.value : '';
     const dateValue = dateInput.value;
     
     if (!nameValue) {
@@ -828,6 +876,12 @@ async function handleAddToken(e) {
         return;
     }
     
+    if (!categoryValue) {
+        showStatus('Please select a category', 'error');
+        categoryInputEl.focus();
+        return;
+    }
+    
     try {
         updateUIState(true);
         
@@ -835,7 +889,8 @@ async function handleAddToken(e) {
         const requestBody = { 
             name: nameValue,
             token: tokenValue,
-            tag: tagValue
+            tag: tagValue,
+            category: categoryValue
         };
         
         // Add createdAt if date is selected
@@ -867,6 +922,9 @@ async function handleAddToken(e) {
             tokenInput.value = '';
             if (tagInputEl && tagInputEl.tagName === 'SELECT') {
                 tagInputEl.value = '';
+            }
+            if (categoryInputEl && categoryInputEl.tagName === 'SELECT') {
+                categoryInputEl.value = '';
             }
             dateInput.value = '';
             nameInput.focus();
@@ -1038,6 +1096,14 @@ function handleExpiryFilter(e) {
 }
 
 /**
+ * Category Filter
+ */
+function handleCategoryFilter(e) {
+    currentCategoryFilter = e.target.value;
+    renderTokens();
+}
+
+/**
  * Toggle Export Menu
  */
 function toggleExportMenu(e) {
@@ -1054,7 +1120,7 @@ function exportToCSV() {
         
         // CSV Header with UTF-8 BOM for Excel compatibility
         let csv = '\uFEFF'; // UTF-8 BOM
-        csv += 'Name,Token,Tag,Added On\r\n';
+        csv += 'Name,Token,Tag,Category,Added On\r\n';
         
         // CSV Data
         tokens.forEach(token => {
@@ -1065,9 +1131,10 @@ function exportToCSV() {
             const name = `"${(token.name || '').replace(/"/g, '""')}"`;
             const value = `"${(token.value || '').replace(/"/g, '""')}"`;
             const tag = `"${token.tag || 'None'}"`;
+            const category = `"${token.category || 'None'}"`;
             const dateStr = `"${formattedDate}"`;
             
-            csv += `${name},${value},${tag},${dateStr}\r\n`;
+            csv += `${name},${value},${tag},${category},${dateStr}\r\n`;
         });
         
         // Create and download file with proper CSV MIME type
@@ -1403,6 +1470,8 @@ async function importParsedTokens() {
     
     const whatsappTagInputEl = document.getElementById('whatsappTagInput');
     const tag = whatsappTagInputEl ? whatsappTagInputEl.value : '';
+    const whatsappCategoryInputEl = document.getElementById('whatsappCategoryInput');
+    const category = whatsappCategoryInputEl ? whatsappCategoryInputEl.value : '';
     let imported = 0;
     let failed = 0;
     let duplicates = 0;
@@ -1419,6 +1488,7 @@ async function importParsedTokens() {
                     name: token.name,
                     token: token.value,
                     tag: tag,
+                    category: category,
                     createdAt: token.createdAt  // Pass the WhatsApp message date
                 })
             });
@@ -1679,6 +1749,7 @@ function openEditModal(tokenId) {
     editNameInput.value = token.name;
     editTokenInput.value = token.value;
     editTagInput.value = token.tag || '';
+    editCategoryInput.value = token.category || '';
     
     // Format date for datetime-local input (YYYY-MM-DDTHH:MM)
     const date = new Date(token.createdAt);
@@ -1719,6 +1790,8 @@ async function handleEditToken(e) {
     const tokenValue = editTokenInput.value.trim();
     const editTagInputEl = document.getElementById('editTagInput');
     const tagValue = editTagInputEl ? editTagInputEl.value : '';
+    const editCategoryInputEl = document.getElementById('editCategoryInput');
+    const categoryValue = editCategoryInputEl ? editCategoryInputEl.value : '';
     const dateValue = editDateInput.value;
     
     if (!nameValue || !tokenValue || !dateValue) {
@@ -1740,6 +1813,7 @@ async function handleEditToken(e) {
                 name: nameValue,
                 token: tokenValue,
                 tag: tagValue,
+                category: categoryValue,
                 createdAt: createdAt
             })
         });
@@ -1879,6 +1953,120 @@ async function confirmBulkTagUpdate() {
     } finally {
         confirmBulkTagBtn.disabled = false;
         confirmBulkTagBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Update Tags';
+    }
+}
+
+/**
+ * Show Bulk Category Update Modal
+ */
+function showBulkCategoryModal() {
+    if (selectedTokens.size === 0) {
+        showStatus('Please select tokens first!', 'error');
+        return;
+    }
+    
+    bulkCategoryCount.textContent = selectedTokens.size;
+    bulkCategorySelect.value = '';
+    bulkCategoryModal.classList.remove('hidden');
+}
+
+/**
+ * Close Bulk Category Update Modal
+ */
+function closeBulkCategoryModalHandler() {
+    bulkCategoryModal.classList.add('hidden');
+    bulkCategorySelect.value = '';
+}
+
+/**
+ * Confirm Bulk Category Update
+ */
+async function confirmBulkCategoryUpdate() {
+    const newCategory = bulkCategorySelect.value;
+    const selectedIds = Array.from(selectedTokens);
+    
+    if (selectedIds.length === 0) {
+        showStatus('No tokens selected!', 'error');
+        return;
+    }
+    
+    const categoryLabels = {
+        'shakti': 'Shakti', 'gt': 'GT', 'cadbury': 'Cadbury',
+        'rs': 'RS', 'other_apk': 'Other APK', 'personal_apk': 'Personal APK'
+    };
+    
+    const confirmation = confirm(
+        `Are you sure you want to update category for ${selectedIds.length} token(s)?\n` +
+        `New category: ${categoryLabels[newCategory] || 'No Category'}`
+    );
+    
+    if (!confirmation) {
+        return;
+    }
+    
+    try {
+        confirmBulkCategoryBtn.disabled = true;
+        confirmBulkCategoryBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Updating...';
+        
+        let updated = 0;
+        let failed = 0;
+        
+        for (const tokenId of selectedIds) {
+            try {
+                const token = tokens.find(t => t.id === tokenId);
+                if (!token) {
+                    failed++;
+                    continue;
+                }
+                
+                const response = await fetch(`${API_BASE_URL}/api/tokens/${tokenId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ 
+                        name: token.name,
+                        token: token.value,
+                        tag: token.tag,
+                        category: newCategory,
+                        createdAt: token.createdAt
+                    })
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    updated++;
+                } else {
+                    failed++;
+                }
+            } catch (error) {
+                console.error('Failed to update token:', tokenId, error);
+                failed++;
+            }
+        }
+        
+        // Show results
+        let message = `Bulk category update complete! `;
+        if (updated > 0) message += `✅ ${updated} updated`;
+        if (failed > 0) message += `, ❌ ${failed} failed`;
+        
+        showStatus(message, updated > 0 ? 'success' : 'error');
+        
+        // Reload tokens and close modal
+        await loadTokens();
+        closeBulkCategoryModalHandler();
+        deselectAll();
+        
+    } catch (error) {
+        console.error('Error in bulk category update:', error);
+        showStatus(`Failed to update category: ${error.message}`, 'error');
+    } finally {
+        confirmBulkCategoryBtn.disabled = false;
+        confirmBulkCategoryBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Update Category';
     }
 }
 

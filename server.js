@@ -156,6 +156,7 @@ async function getGitHubFile() {
           const value = parts[1] || '';
           const tag = parts[2] || ''; // Tag is optional
           const createdAt = parts[3] || new Date().toISOString(); // Date is optional, use current if not present
+          const category = parts[4] || ''; // Category is optional
           
           // Create consistent ID based on token value (first 10 chars + last 10 chars)
           const idBase = value.trim().substring(0, 10) + value.trim().substring(Math.max(0, value.trim().length - 10));
@@ -165,6 +166,7 @@ async function getGitHubFile() {
             name: name.trim() || `Token ${index + 1}`,
             value: value.trim(),
             tag: tag.trim(),
+            category: category.trim(),
             createdAt: createdAt.trim() || new Date().toISOString()
           };
         } else {
@@ -178,6 +180,7 @@ async function getGitHubFile() {
             name: `Token ${index + 1}`,
             value: tokenValue,
             tag: '',
+            category: '',
             createdAt: new Date().toISOString()
           };
         }
@@ -223,7 +226,8 @@ async function updateGitHubFile(tokens, sha, message) {
       fileContent = tokens.map(t => {
         const tag = (t.tag && t.tag.trim() !== '') ? t.tag : '';
         const date = t.createdAt || new Date().toISOString();
-        return `${t.name}\t${t.value}\t${tag}\t${date}`;
+        const category = (t.category && t.category.trim() !== '') ? t.category : '';
+        return `${t.name}\t${t.value}\t${tag}\t${date}\t${category}`;
       }).join('\n');
     }
     
@@ -363,7 +367,7 @@ app.get('/api/tokens', authenticate, async (req, res) => {
 // POST new token (Both roles can add, but Admin's tag is forced to "banti")
 app.post('/api/tokens', authenticate, enforceAdminTagRestriction, async (req, res) => {
   try {
-    const { name, token, tag, createdAt } = req.body;
+    const { name, token, tag, category, createdAt } = req.body;
     
     // Validate input
     if (!name || name.trim() === '') {
@@ -389,6 +393,7 @@ app.post('/api/tokens', authenticate, enforceAdminTagRestriction, async (req, re
       name: name.trim(),
       value: token.trim(),
       tag: tag || '',
+      category: category || '',
       createdAt: createdAt || new Date().toISOString() // Use provided date or current date
     };
     
@@ -467,7 +472,7 @@ app.delete('/api/tokens/:id', authenticate, async (req, res) => {
 app.put('/api/tokens/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    let { name, token, tag, createdAt } = req.body;
+    let { name, token, tag, category, createdAt } = req.body;
     
     // Validate input
     if (!name || name.trim() === '') {
@@ -510,6 +515,7 @@ app.put('/api/tokens/:id', authenticate, async (req, res) => {
       name: name.trim(),
       value: token.trim(),
       tag: tag || '',
+      category: category || tokens[tokenIndex].category || '',
       createdAt: createdAt || tokens[tokenIndex].createdAt
     };
     

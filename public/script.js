@@ -111,7 +111,13 @@ function updateUIForRole() {
             `;
         }
         
-        // Admin CAN delete tokens now - don't hide delete buttons
+        // Hide all delete controls for Admin
+        document.querySelectorAll('.btn-delete').forEach(btn => {
+            btn.style.display = 'none';
+        });
+        if (deleteSelectedBtn) deleteSelectedBtn.style.display = 'none';
+        if (bulkDeleteBtn) bulkDeleteBtn.style.display = 'none';
+        if (bulkDeleteSection) bulkDeleteSection.classList.add('hidden');
         
         // Hide bulk tag update button (Admin can't change tags)
         const bulkUpdateTagBtn = document.getElementById('bulkUpdateTagBtn');
@@ -808,6 +814,7 @@ function createTokenRow(token, index) {
                     <i class="fas fa-edit"></i>
                     <span class="hidden lg:inline">Edit</span>
                 </button>
+                ${isSuperAdmin ? `
                 <button 
                     onclick="deleteToken('${token.id}')"
                     class="btn-delete px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm flex items-center space-x-1"
@@ -816,6 +823,7 @@ function createTokenRow(token, index) {
                     <i class="fas fa-trash"></i>
                     <span class="hidden lg:inline">Delete</span>
                 </button>
+                ` : ''}
             </div>
         </td>
     `;
@@ -948,6 +956,11 @@ async function handleAddToken(e) {
  * @param {String} tokenId - Token ID to delete
  */
 async function deleteToken(tokenId) {
+    if (!currentUser || currentUser.role !== 'super_admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this token?')) {
         return;
     }
@@ -1293,6 +1306,11 @@ function deselectAll() {
 }
 
 async function deleteSelectedTokens() {
+    if (!currentUser || currentUser.role !== 'super_admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+
     if (selectedTokens.size === 0) return;
     
     const confirmed = confirm(`Are you sure you want to delete ${selectedTokens.size} selected tokens?`);
@@ -1546,6 +1564,11 @@ function escapeHtml(text) {
  * Show bulk delete section
  */
 function showBulkDelete() {
+    if (!currentUser || currentUser.role !== 'super_admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+
     bulkDeleteSection.classList.remove('hidden');
     bulkDeleteTextarea.focus();
     bulkDeleteSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1674,6 +1697,11 @@ function searchTokensToDelete() {
  * Confirm and delete matched tokens
  */
 async function confirmBulkDelete() {
+    if (!currentUser || currentUser.role !== 'super_admin') {
+        showStatus('Access denied. Only Super Admin can delete tokens.', 'error');
+        return;
+    }
+
     if (tokensToDelete.length === 0) {
         showStatus('No tokens to delete!', 'error');
         return;

@@ -10,9 +10,11 @@ const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
 
 // Middleware
 app.use(cors());
@@ -34,7 +36,7 @@ const users = [
   {
     id: '1',
     username: 'superadmin',
-    password: 'superadmin123', // In production, use hashed passwords
+    password: 'super@@1524',
     role: ROLES.SUPER_ADMIN,
     name: 'Super Admin'
   },
@@ -47,8 +49,33 @@ const users = [
   }
 ];
 
-// Active sessions (In production, use Redis or database)
+// Lifetime sessions persisted to disk (survive server restarts)
 const sessions = new Map();
+
+function loadSessions() {
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+      Object.entries(data).forEach(([token, session]) => {
+        sessions.set(token, session);
+      });
+      console.log(`🔐 Loaded ${sessions.size} persistent session(s)`);
+    }
+  } catch (error) {
+    console.error('Failed to load sessions:', error.message);
+  }
+}
+
+function saveSessions() {
+  try {
+    const data = Object.fromEntries(sessions);
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('Failed to save sessions:', error.message);
+  }
+}
+
+loadSessions();
 
 // Generate session token
 function generateToken() {
@@ -287,7 +314,7 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // Generate session token
+  // Generate lifetime session token (never expires unless logout)
   const token = generateToken();
   sessions.set(token, {
     user: {
@@ -298,6 +325,7 @@ app.post('/api/auth/login', (req, res) => {
     },
     createdAt: Date.now()
   });
+  saveSessions();
 
   res.json({
     success: true,
@@ -315,6 +343,7 @@ app.post('/api/auth/login', (req, res) => {
 // Logout endpoint
 app.post('/api/auth/logout', authenticate, (req, res) => {
   sessions.delete(req.token);
+  saveSessions();
   res.json({ 
     success: true, 
     message: 'Logged out successfully' 
@@ -429,8 +458,8 @@ app.post('/api/tokens', authenticate, enforceAdminTagRestriction, async (req, re
   }
 });
 
-// DELETE token by ID (Both Super Admin and Admin can delete)
-app.delete('/api/tokens/:id', authenticate, async (req, res) => {
+// DELETE token by ID (Super Admin only)
+app.delete('/api/tokens/:id', authenticate, superAdminOnly, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -553,6 +582,7 @@ app.listen(PORT, () => {
   console.log(`📁 GitHub: ${GITHUB_OWNER}/${GITHUB_REPO}/${GITHUB_FILE_PATH}`);
   console.log(`✅ Ready to manage tokens!`);
   console.log(`👤 Default Users:`);
-  console.log(`   - Super Admin: superadmin / superadmin123`);
+  console.log(`   - Super Admin: superadmin / super@@1524`);
   console.log(`   - Admin: banti / banti123`);
+  console.log(`🔐 Sessions: lifetime (persist across restarts)`);
 });
